@@ -43,6 +43,7 @@ url = 'https://commondatastorage.googleapis.com/books1000/'
 last_percent_reported = None
 data_root = '.' # Change me to store data elsewhere
 
+
 def download_progress_hook(count, blockSize, totalSize):
   """A hook to report the progress of a download. This is mostly intended for users with
   slow internet connections. Reports every 5% change in download progress.
@@ -111,8 +112,9 @@ def maybe_extract(filename, force=False):
 train_folders = maybe_extract(train_filename)
 test_folders = maybe_extract(test_filename)
 
-displayImagesFromTrainFolders(train_folders);
-os.system("pause");
+#PROBLEM1
+#displayImagesFromTrainFolders(train_folders);
+#os.system("pause");
 
 
 # Now let's load the data in a more manageable format. Since, depending on your computer setup you might not be able to fit it all in memory, we'll load each class into a separate dataset, store them on disk and curate them independently. Later we'll merge them into a single dataset of manageable size.
@@ -178,34 +180,25 @@ def maybe_pickle(data_folders, min_num_images_per_class, force=False):
 train_datasets = maybe_pickle(train_folders, 45000)
 test_datasets = maybe_pickle(test_folders, 1800)
 
-showImagesFromAllPickleFolders(train_datasets, test_datasets);
+
+
+#Problem2
+#showImagesFromAllPickleFolders(train_datasets, test_datasets);
+#os.system("pause");
 
 
            
-
-
-# In[29]:
-
-def getLabel(filename):
-    label = str(os.path.splitext(os.path.splitext(filename)[0])[0]);
-    label = label[-1];
-    return ord(label)-ord("A");
-    
-print(getLabel(".\\notMNIST_large\F.pickle"));
-    
-
-#showHistogramsForTrainTest(train_datasets, test_datasets);
 
 # ---
 # Problem 3
 # ---------
 # Another check: we expect the data to be balanced across classes. Verify that.
-# 
+#
 # ---
-
-# In[9]:
-
-
+# In[29]:
+#print(exercises.getLabel(".\\notMNIST_large\F.pickle"));
+#showHistogramsForTrainTest(train_datasets, test_datasets);
+#os.system("pause");
 
 
 # Merge and prune the training data as needed. Depending on your computer setup, you might not be able to fit it all in memory, and you can tune `train_size` as needed. The labels will be stored into a separate array of integers 0 through 9.
@@ -253,7 +246,7 @@ def createTrainingValidationSets(pickle_files, percentTraining):
             letter_set = pickle.load(f)
             # let's shuffle the letters to have random validation and training set
             np.random.shuffle(letter_set)
-            label = getLabel(pickle_file);
+            label = exercises.getLabel(pickle_file);
             numExamples = np.shape(letter_set)[0];
 
             #initialize dimensions
@@ -271,7 +264,11 @@ def createTrainingValidationSets(pickle_files, percentTraining):
         except Exception as e:
             print('Unable to process data from', pickle_file, ':', e)
             raise
-    
+
+    permutation = np.random.permutation(totalImages);
+    entire_dataset = entire_dataset[permutation,:,:];
+    entire_labels = entire_labels[permutation];
+
     train_dataset = entire_dataset[:trainSize];
     train_labels  = entire_labels[:trainSize];
     
@@ -293,18 +290,20 @@ print('Validation:', valid_dataset.shape, valid_labels.shape)
 print('Testing:', test_dataset.shape, test_labels.shape)
 
 
+
 # Next, we'll randomize the data. It's important to have the labels well shuffled for the training and test distributions to match.
 
 # In[ ]:
 
-def randomize(dataset, labels):
-  permutation = np.random.permutation(labels.shape[0])
-  shuffled_dataset = dataset[permutation,:,:]
-  shuffled_labels = labels[permutation]
-  return shuffled_dataset, shuffled_labels
-train_dataset, train_labels = randomize(train_dataset, train_labels)
-test_dataset, test_labels = randomize(test_dataset, test_labels)
-valid_dataset, valid_labels = randomize(valid_dataset, valid_labels)
+# def randomize(dataset, labels):
+#    permutation = np.random.permutation(labels.shape[0])
+#    shuffled_dataset = dataset[permutation,:,:]
+#    shuffled_labels = labels[permutation]
+#    return shuffled_dataset, shuffled_labels
+#
+# #train_dataset, train_labels = randomize(train_dataset, train_labels)
+# #test_dataset, test_labels = randomize(test_dataset, test_labels)
+# #valid_dataset, valid_labels = randomize(valid_dataset, valid_labels)
 
 
 # ---
@@ -318,33 +317,33 @@ valid_dataset, valid_labels = randomize(valid_dataset, valid_labels)
 
 # In[ ]:
 
-showImageFromDataSet(train_dataset, train_labels);
-showImageFromDataSet(test_datasets, test_labels);
-showImageFromDataSet(valid_dataset, valid_labels);
 
-pickle_file = os.path.join(data_root, 'notMNIST.pickle')
+#showImageFromDataSet(train_dataset, train_labels);
+#showImageFromDataSet(test_datasets, test_labels);
+#showImageFromDataSet(valid_dataset, valid_labels);
+#os.system("pause");
 
-try:
-  f = open(pickle_file, 'wb')
-  save = {
-    'train_dataset': train_dataset,
-    'train_labels': train_labels,
-    'valid_dataset': valid_dataset,
-    'valid_labels': valid_labels,
-    'test_dataset': test_dataset,
-    'test_labels': test_labels,
-    }
-  pickle.dump(save, f, pickle.HIGHEST_PROTOCOL)
-  f.close()
-except Exception as e:
-  print('Unable to save data to', pickle_file, ':', e)
-  raise
-
-
-# In[ ]:
-
-statinfo = os.stat(pickle_file)
-print('Compressed pickle size:', statinfo.st_size)
+# pickle_file = os.path.join(data_root, 'notMNIST.pickle')
+#
+# try:
+#   f = open(pickle_file, 'wb')
+#   save = {
+#     'train_dataset': train_dataset,
+#     'train_labels': train_labels,
+#     'valid_dataset': valid_dataset,
+#     'valid_labels': valid_labels,
+#     'test_dataset': test_dataset,
+#     'test_labels': test_labels,
+#     }
+#   pickle.dump(save, f, pickle.HIGHEST_PROTOCOL)
+#   f.close()
+# except Exception as e:
+#   print('Unable to save data to', pickle_file, ':', e)
+#   raise
+#
+# # In[ ]:
+# statinfo = os.stat(pickle_file)
+# print('Compressed pickle size:', statinfo.st_size)
 
 
 # ---
@@ -359,6 +358,11 @@ print('Compressed pickle size:', statinfo.st_size)
 # - Create a sanitized validation and test set, and compare your accuracy on those in subsequent assignments.
 # ---
 
+#### ???? #####
+
+
+
+
 # ---
 # Problem 6
 # ---------
@@ -370,3 +374,52 @@ print('Compressed pickle size:', statinfo.st_size)
 # Optional question: train an off-the-shelf model on all the data!
 # 
 # ---
+def flatMatrix(dataset):
+    tsh = np.shape(dataset);
+    reducedDataset = np.reshape(dataset, (tsh[0], tsh[1] * tsh[2]));
+    return reducedDataset;
+
+#label 0 to 9
+def hotlabel(label, maxNumLabels):
+    return np.eye(maxNumLabels, dtype=int)[label];
+
+def logisticRegression(train_dataset, train_labels, test_dataset, test_labels, valid_dataset,
+                       valid_labels, desiredNumberOfTrainingExamples):
+    desiredNumberOfTrainingExamples = min(desiredNumberOfTrainingExamples, np.shape(train_dataset)[0]);
+
+    reducedTrainingSet = train_dataset[:desiredNumberOfTrainingExamples,:,:];
+    reducedTrainingLabels = train_labels[:desiredNumberOfTrainingExamples];
+
+    Cs = [0.1,0.3,0.6,0.7,0.8,0.9,1]
+    minError = 1;
+    bestLogisticModel = 0;
+    maxIter = 200;
+    for c in Cs:
+        print("fit the model for C = " + " "+ str(c));
+        maxNumLabels = max(valid_labels) + 1;
+        logisticRegr = LogisticRegression(max_iter = maxIter, C = c);
+        logisticRegr.fit(flatMatrix(reducedTrainingSet), reducedTrainingLabels);
+
+        flatValidationSet = flatMatrix(valid_dataset);
+        predValidationSet = logisticRegr.predict_proba(flatValidationSet);
+
+        validLabelsMatrix =  np.ndarray((valid_labels.shape[0], maxNumLabels), dtype=np.float32)
+        for index in range(valid_labels.shape[0]):
+            validLabelsMatrix[index] = hotlabel(valid_labels[index], maxNumLabels);
+
+        crossEntropyError = - np.mean(np.log(predValidationSet) * validLabelsMatrix);
+
+        if crossEntropyError < minError:
+            print("Cross entropy error improved = " + " " + str(crossEntropyError));
+            minError = crossEntropyError;
+            bestLogisticModel = logisticRegr;
+
+    print("Accuracy on test data" + str(bestLogisticModel.score(flatMatrix(test_dataset), test_labels)));
+    return bestLogisticModel;
+
+bestLogisticModel = logisticRegression(train_dataset, train_labels, test_dataset, test_labels, valid_dataset, valid_labels, 5000);
+
+#a sanity check on logit regression
+numChecks = 13;
+for index in range(numChecks):
+    print("Real class " +  str(test_labels[index]) + " predicted " + str(bestLogisticModel.predict(flatMatrix(test_dataset[index]))));

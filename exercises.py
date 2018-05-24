@@ -20,53 +20,24 @@ from os import listdir
 #
 # ---
 
-# In[6]:
-#Problem 1
-# generate a permutation of letters.
+#PROBLEM1 GOOD
 def displayImagesFromTrainFolders(train_folders):
     MAX_SELECTION_FROM_CATEGORY = 1;
     MAX_CATEGORIES = 3;
-    permut = np.random.permutation(10);
+    permut = np.random.permutation(len(train_folders));
     permut = permut[0:MAX_CATEGORIES];
     print(permut);
 
     for index in permut:
         # open the training data set coresponding letter and display a random picture
-        onlyfiles = [f for f in listdir(train_folders[index]) if isfile(join(train_folders[index], f))]
-        onlyfiles = onlyfiles[0:MAX_SELECTION_FROM_CATEGORY];
-        for file in onlyfiles:
+        onlyFiles =  listdir(train_folders[index]);
+        onlyFiles = onlyFiles[0:MAX_SELECTION_FROM_CATEGORY];
+        for file in onlyFiles:
             completeFileName = join(train_folders[index], file);
             print(completeFileName);
-            # displays a np.array of 28x28 integers
-            print(imageio.imread(completeFileName).astype(float).dtype)
             display(Image(filename=completeFileName));
 
-
-# ---
-# Problem 2
-# ---------
-#
-# Let's verify that the data still looks good. Displaying a sample of the labels and images from the ndarray. Hint: you can use matplotlib.pyplot.
-#
-# ---
-
-# In[8]:
-
-# Solution for problem 2
-
-def showImageFromDataSet(imageset, labelset):
-    MAX_SELECTION_FROM_CATEGORY = 1;
-    permut = np.random.permutation(np.shape(imageset)[0]);
-    permut = permut[:MAX_SELECTION_FROM_CATEGORY];
-    fig = plt.figure()
-    count = 0;
-    for index in permut:
-        count = count + 1;
-        ax1 = fig.add_subplot(1, MAX_SELECTION_FROM_CATEGORY, count);
-        ax1.set_title(chr(labelset[index]+97));
-        ax1.imshow(imageset[index])
-
-
+#PROBLEM 2 GOOD
 def showImagesFromAllPickleFolders(train_datasets, test_datasets):
     MAX_SELECTION_FROM_CATEGORY = 1;
     for file in train_datasets + test_datasets:
@@ -87,7 +58,13 @@ def showImagesFromAllPickleFolders(train_datasets, test_datasets):
                 ax1.set_title(label);
                 ax1.imshow(dataset[index])
 
+def getLabel(filename):
+    label = str(os.path.splitext(os.path.splitext(filename)[0])[0]);
+    label = label[-1];
+    return ord(label)-ord("A");
 
+
+#PROBLEM3 GOOD
 def showHistogramsForTrainTest(train_datasets, test_datasets):
     nImagesDistribution = np.zeros(len(train_datasets));
     # list of pickle files.
@@ -114,3 +91,26 @@ def showHistogramsForTrainTest(train_datasets, test_datasets):
     plt.hist(nImagesDistribution, bins='auto')  # arguments are passed to np.histogram
     plt.title("Histogram of test data number of images")
     plt.show()
+
+
+
+# Let's verify that the data still looks good. Displaying a sample of the labels and images from the ndarray. Hint: you can use matplotlib.pyplot.
+#PROBLEM 4 GOOD
+def showImageFromDataSet(imageset, labelset):
+    MAX_SELECTION_FROM_CATEGORY = 1;
+    permut = np.random.permutation(np.shape(imageset)[0]);
+    permut = permut[:MAX_SELECTION_FROM_CATEGORY];
+    fig = plt.figure()
+    count = 0;
+    for index in permut:
+        count = count + 1;
+        ax1 = fig.add_subplot(1, MAX_SELECTION_FROM_CATEGORY, count);
+        ax1.set_title(chr(labelset[index]+97));
+        ax1.imshow(imageset[index])
+
+
+
+
+
+
+
