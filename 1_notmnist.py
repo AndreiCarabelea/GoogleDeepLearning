@@ -390,7 +390,7 @@ def logisticRegression(train_dataset, train_labels, test_dataset, test_labels, v
     reducedTrainingSet = train_dataset[:desiredNumberOfTrainingExamples,:,:];
     reducedTrainingLabels = train_labels[:desiredNumberOfTrainingExamples];
 
-    Cs = [0.1,0.3,0.6,0.7,0.8,0.9,1]
+    Cs = [0.1]
     minError = 1;
     bestLogisticModel = 0;
     maxIter = 200;
@@ -420,6 +420,6 @@ def logisticRegression(train_dataset, train_labels, test_dataset, test_labels, v
 bestLogisticModel = logisticRegression(train_dataset, train_labels, test_dataset, test_labels, valid_dataset, valid_labels, 5000);
 
 #a sanity check on logit regression
-numChecks = 13;
+numChecks = 50;
 for index in range(numChecks):
-    print("Real class " +  str(test_labels[index]) + " predicted " + str(bestLogisticModel.predict(flatMatrix(test_dataset[index]))));
+    print("Real class " +  str(test_labels[index]) + " predicted " + str(bestLogisticModel.predict(flatMatrix(test_dataset)[index])));
