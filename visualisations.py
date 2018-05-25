@@ -37,6 +37,7 @@ def displayImagesFromTrainFolders(train_folders):
             print(completeFileName);
             display(Image(filename=completeFileName));
 
+
 #PROBLEM 2 GOOD
 def showImagesFromAllPickleFolders(train_datasets, test_datasets):
     MAX_SELECTION_FROM_CATEGORY = 1;

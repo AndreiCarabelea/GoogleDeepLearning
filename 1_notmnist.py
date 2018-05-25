@@ -26,10 +26,9 @@ from IPython.display import display, Image
 from sklearn.linear_model import LogisticRegression
 from six.moves.urllib.request import urlretrieve
 from six.moves import cPickle as pickle
-from os.path import join, isfile, isdir
-from os import listdir
-import  exercises
-from exercises import displayImagesFromTrainFolders, showImagesFromAllPickleFolders, showHistogramsForTrainTest, showImageFromDataSet
+import  visualisations
+import learningAlgorithms
+from visualisations import displayImagesFromTrainFolders, showImagesFromAllPickleFolders, showHistogramsForTrainTest, showImageFromDataSet
 
 # Config the matplotlib backend as plotting inline in IPython
 #get_ipython().magic('matplotlib inline')
@@ -42,6 +41,9 @@ from exercises import displayImagesFromTrainFolders, showImagesFromAllPickleFold
 url = 'https://commondatastorage.googleapis.com/books1000/'
 last_percent_reported = None
 data_root = '.' # Change me to store data elsewhere
+np.random.seed(133)
+image_size = 28  # Pixel width and height.
+pixel_depth = 255.0  # Number of levels per pixel.
 
 
 def download_progress_hook(count, blockSize, totalSize):
@@ -76,8 +78,7 @@ def maybe_download(filename, expected_bytes, force=False):
       'Failed to verify ' + dest_filename + '. Can you get to it with a browser?')
   return dest_filename
 
-train_filename = maybe_download('notMNIST_large.tar.gz', 247336696)
-test_filename = maybe_download('notMNIST_small.tar.gz', 8458043)
+
 
 
 # Extract the dataset from the compressed .tar.gz file.
@@ -85,8 +86,8 @@ test_filename = maybe_download('notMNIST_small.tar.gz', 8458043)
 
 # In[5]:
 
-num_classes = 10
-np.random.seed(133)
+
+
 
 def maybe_extract(filename, force=False):
   root = os.path.splitext(os.path.splitext(filename)[0])[0]  # remove .tar.gz
@@ -102,15 +103,9 @@ def maybe_extract(filename, force=False):
   data_folders = [
     os.path.join(root, d) for d in sorted(os.listdir(root))
     if os.path.isdir(os.path.join(root, d))]
-  if len(data_folders) != num_classes:
-    raise Exception(
-      'Expected %d folders, one per class. Found %d instead.' % (
-        num_classes, len(data_folders)))
+
   print(data_folders)
   return data_folders
-  
-train_folders = maybe_extract(train_filename)
-test_folders = maybe_extract(test_filename)
 
 #PROBLEM1
 #displayImagesFromTrainFolders(train_folders);
@@ -124,8 +119,7 @@ test_folders = maybe_extract(test_filename)
 # A few images might not be readable, we'll just skip them.
 # In[7]:
 
-image_size = 28  # Pixel width and height.
-pixel_depth = 255.0  # Number of levels per pixel.
+
 
 #return the data set associated with that letter.
 def load_letter(folder, min_num_images):
@@ -177,11 +171,6 @@ def maybe_pickle(data_folders, min_num_images_per_class, force=False):
   
   return dataset_names
 
-train_datasets = maybe_pickle(train_folders, 45000)
-test_datasets = maybe_pickle(test_folders, 1800)
-
-
-
 #Problem2
 #showImagesFromAllPickleFolders(train_datasets, test_datasets);
 #os.system("pause");
@@ -217,6 +206,7 @@ def make_arrays(nb_rows, img_size):
 def createTrainingValidationSets(pickle_files, percentTraining):
     num_classes = len(pickle_files)
     totalImages = 0;
+
     for pfile in pickle_files:
         try:
           with open(pfile, 'rb') as f:
@@ -246,7 +236,7 @@ def createTrainingValidationSets(pickle_files, percentTraining):
             letter_set = pickle.load(f)
             # let's shuffle the letters to have random validation and training set
             np.random.shuffle(letter_set)
-            label = exercises.getLabel(pickle_file);
+            label = visualisations.getLabel(pickle_file);
             numExamples = np.shape(letter_set)[0];
 
             #initialize dimensions
@@ -280,30 +270,85 @@ def createTrainingValidationSets(pickle_files, percentTraining):
     else:
         return train_dataset, train_labels, None, None
 
-            
-            
-train_dataset, train_labels, valid_dataset, valid_labels = createTrainingValidationSets(train_datasets, 0.7)
-test_dataset, test_labels, _, _ = createTrainingValidationSets(test_datasets, 1)
 
-print('Training:', train_dataset.shape, train_labels.shape)
-print('Validation:', valid_dataset.shape, valid_labels.shape)
-print('Testing:', test_dataset.shape, test_labels.shape)
+def reformatForTensorFlow(dataset, labels, maxNumLabels):
+  datasetFormated = learningAlgorithms.flatMatrix(dataset)
+  # Map 0 to [1.0, 0.0, 0.0 ...], 1 to [0.0, 1.0, 0.0 ...]
+  validLabelsMatrix = np.ndarray((labels.shape[0], maxNumLabels), dtype=np.float32)
+  for index in range(labels.shape[0]):
+      validLabelsMatrix[index] = learningAlgorithms.hotlabel(labels[index], maxNumLabels);
+  return datasetFormated, validLabelsMatrix
 
 
 
-# Next, we'll randomize the data. It's important to have the labels well shuffled for the training and test distributions to match.
+pickle_file = 'notMNIST.pickle'
+dest_filename = os.path.join(data_root, pickle_file)
 
-# In[ ]:
+#load the datasets from pickle file , if the pickle file exists
+if os.path.exists(dest_filename):
+    with open(pickle_file, 'rb') as f:
+      save = pickle.load(f)
+      train_dataset = save['train_dataset']
+      train_labels = save['train_labels']
+      valid_dataset = save['valid_dataset']
+      valid_labels = save['valid_labels']
+      test_dataset = save['test_dataset']
+      test_labels = save['test_labels']
+      del save  # hint to help gc free up memory
+      print('Training set', train_dataset.shape, train_labels.shape)
+      print('Validation set', valid_dataset.shape, valid_labels.shape)
+      print('Test set', test_dataset.shape, test_labels.shape)
 
-# def randomize(dataset, labels):
-#    permutation = np.random.permutation(labels.shape[0])
-#    shuffled_dataset = dataset[permutation,:,:]
-#    shuffled_labels = labels[permutation]
-#    return shuffled_dataset, shuffled_labels
-#
-# #train_dataset, train_labels = randomize(train_dataset, train_labels)
-# #test_dataset, test_labels = randomize(test_dataset, test_labels)
-# #valid_dataset, valid_labels = randomize(valid_dataset, valid_labels)
+else:
+    train_filename = maybe_download('notMNIST_large.tar.gz', 247336696)
+    test_filename = maybe_download('notMNIST_small.tar.gz', 8458043)
+    train_folders = maybe_extract(train_filename)
+    test_folders = maybe_extract(test_filename)
+
+    #these are pickle files
+    train_datasets = maybe_pickle(train_folders, 45000)
+    test_datasets = maybe_pickle(test_folders, 1800)
+
+    #these are nparrays holding the data, non label datasets are 3d arrays.
+    train_dataset, train_labels, valid_dataset, valid_labels = createTrainingValidationSets(train_datasets, 0.7)
+    test_dataset, test_labels, _, _ = createTrainingValidationSets(test_datasets, 1)
+
+    print('Training:', train_dataset.shape, train_labels.shape)
+    print('Validation:', valid_dataset.shape, valid_labels.shape)
+    print('Testing:', test_dataset.shape, test_labels.shape)
+
+    pickle_file = os.path.join(data_root, 'notMNIST.pickle')
+
+    try:
+      f = open(pickle_file, 'wb')
+      save = {
+        'train_dataset': train_dataset,
+        'train_labels': train_labels,
+        'valid_dataset': valid_dataset,
+        'valid_labels': valid_labels,
+        'test_dataset': test_dataset,
+        'test_labels': test_labels,
+        }
+      pickle.dump(save, f, pickle.HIGHEST_PROTOCOL)
+      f.close()
+    except Exception as e:
+      print('Unable to save data to', pickle_file, ':', e)
+      raise
+
+    # In[ ]:
+    statinfo = os.stat(pickle_file)
+    print('Compressed pickle size:', statinfo.st_size)
+
+
+numLabels = max(max(train_labels), max(valid_labels)) + 1;
+
+trainTFDataSet, trainTFLabels = reformatForTensorFlow(train_dataset, train_labels, numLabels)
+validTFDataSet, validTFLabels = reformatForTensorFlow(valid_dataset, valid_labels, numLabels)
+testTFDataSet,  testTFLabels  = reformatForTensorFlow(test_dataset, test_labels, numLabels)
+print('Training set', trainTFDataSet.shape, trainTFLabels.shape)
+print('Validation set', validTFDataSet.shape, validTFLabels.shape)
+print('Test set', testTFDataSet.shape, testTFLabels.shape)
+
 
 
 # ---
@@ -323,43 +368,6 @@ print('Testing:', test_dataset.shape, test_labels.shape)
 #showImageFromDataSet(valid_dataset, valid_labels);
 #os.system("pause");
 
-# pickle_file = os.path.join(data_root, 'notMNIST.pickle')
-#
-# try:
-#   f = open(pickle_file, 'wb')
-#   save = {
-#     'train_dataset': train_dataset,
-#     'train_labels': train_labels,
-#     'valid_dataset': valid_dataset,
-#     'valid_labels': valid_labels,
-#     'test_dataset': test_dataset,
-#     'test_labels': test_labels,
-#     }
-#   pickle.dump(save, f, pickle.HIGHEST_PROTOCOL)
-#   f.close()
-# except Exception as e:
-#   print('Unable to save data to', pickle_file, ':', e)
-#   raise
-#
-# # In[ ]:
-# statinfo = os.stat(pickle_file)
-# print('Compressed pickle size:', statinfo.st_size)
-
-
-# ---
-# Problem 5
-# ---------
-# 
-# By construction, this dataset might contain a lot of overlapping samples, including training data that's also contained in the validation and test set! Overlap between training and test can skew the results if you expect to use your model in an environment where there is never an overlap, but are actually ok if you expect to see training samples recur when you use it.
-# Measure how much overlap there is between training, validation and test samples.
-# 
-# Optional questions:
-# - What about near duplicates between datasets? (images that are almost identical)
-# - Create a sanitized validation and test set, and compare your accuracy on those in subsequent assignments.
-# ---
-
-#### ???? #####
-
 
 
 
@@ -374,52 +382,10 @@ print('Testing:', test_dataset.shape, test_labels.shape)
 # Optional question: train an off-the-shelf model on all the data!
 # 
 # ---
-def flatMatrix(dataset):
-    tsh = np.shape(dataset);
-    reducedDataset = np.reshape(dataset, (tsh[0], tsh[1] * tsh[2]));
-    return reducedDataset;
 
-#label 0 to 9
-def hotlabel(label, maxNumLabels):
-    return np.eye(maxNumLabels, dtype=int)[label];
-
-def logisticRegression(train_dataset, train_labels, test_dataset, test_labels, valid_dataset,
-                       valid_labels, desiredNumberOfTrainingExamples):
-    desiredNumberOfTrainingExamples = min(desiredNumberOfTrainingExamples, np.shape(train_dataset)[0]);
-
-    reducedTrainingSet = train_dataset[:desiredNumberOfTrainingExamples,:,:];
-    reducedTrainingLabels = train_labels[:desiredNumberOfTrainingExamples];
-
-    Cs = [0.1]
-    minError = 1;
-    bestLogisticModel = 0;
-    maxIter = 200;
-    for c in Cs:
-        print("fit the model for C = " + " "+ str(c));
-        maxNumLabels = max(valid_labels) + 1;
-        logisticRegr = LogisticRegression(max_iter = maxIter, C = c);
-        logisticRegr.fit(flatMatrix(reducedTrainingSet), reducedTrainingLabels);
-
-        flatValidationSet = flatMatrix(valid_dataset);
-        predValidationSet = logisticRegr.predict_proba(flatValidationSet);
-
-        validLabelsMatrix =  np.ndarray((valid_labels.shape[0], maxNumLabels), dtype=np.float32)
-        for index in range(valid_labels.shape[0]):
-            validLabelsMatrix[index] = hotlabel(valid_labels[index], maxNumLabels);
-
-        crossEntropyError = - np.mean(np.log(predValidationSet) * validLabelsMatrix);
-
-        if crossEntropyError < minError:
-            print("Cross entropy error improved = " + " " + str(crossEntropyError));
-            minError = crossEntropyError;
-            bestLogisticModel = logisticRegr;
-
-    print("Accuracy on test data" + str(bestLogisticModel.score(flatMatrix(test_dataset), test_labels)));
-    return bestLogisticModel;
-
-bestLogisticModel = logisticRegression(train_dataset, train_labels, test_dataset, test_labels, valid_dataset, valid_labels, 5000);
+bestLogisticModel = learningAlgorithms.logisticRegression(train_dataset, train_labels, test_dataset, test_labels, valid_dataset, valid_labels, 5000);
 
 #a sanity check on logit regression
 numChecks = 50;
 for index in range(numChecks):
-    print("Real class " +  str(test_labels[index]) + " predicted " + str(bestLogisticModel.predict(flatMatrix(test_dataset)[index])));
+    print("Real class " +  str(test_labels[index]) + " predicted " + str(bestLogisticModel.predict(learningAlgorithms.flatMatrix(test_dataset)[index])));
