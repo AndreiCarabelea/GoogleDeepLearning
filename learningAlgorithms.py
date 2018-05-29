@@ -5,7 +5,7 @@ image_size = 28;
 
 #unused usefull for reference
 def softmax(x):
-    return np.exp(x) / np.sum(np.exp(x),axis = 0);
+    return  np.exp(x) / np.sum(np.exp(x),axis = 0);
 
 def flatMatrix(dataset):
     tsh = np.shape(dataset);
