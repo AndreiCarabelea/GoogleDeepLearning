@@ -204,32 +204,26 @@ def make_arrays(nb_rows, img_size):
 
 #create a cross validation set having the size of valid_size , half of the trainign set.
 def createTrainingValidationSets(pickle_files, percentTraining):
-    num_classes = len(pickle_files)
-    totalImages = 0;
-
-    for pfile in pickle_files:
-        try:
-          with open(pfile, 'rb') as f:
-              #load data set from picke file 
-              dataset = pickle.load(f);
-              nDataSet = np.shape(dataset)[0];
-              totalImages = totalImages + nDataSet;
-        except:
-              #this remained unchanged if we cannot deserialize the pickle file 
-              totalImages = totalImages;
-
-    trainSize = (int)(percentTraining*totalImages);
-    validSize = totalImages - trainSize;
-
 
     #create empty datasets for training/validation set
-    valid_dataset, valid_labels = make_arrays(validSize, image_size)
-    train_dataset, train_labels = make_arrays(trainSize, image_size)
-    entire_dataset, entire_labels = np.ndarray((totalImages, image_size, image_size), dtype=np.float32), np.ndarray(totalImages, dtype=np.int32);
-    lastIndex = 0;
+    valid_dataset, valid_labels = np.array([]), np.array([]);
+    train_dataset, train_labels = np.array([]), np.array([]);
 
-    #enumerate through pickle files 
-    for label, pickle_file in enumerate(pickle_files):       
+    valid_dataset.shape = (0, image_size, image_size);
+    train_dataset.shape = (0, image_size, image_size);
+
+    valid_labels.shape = 0;
+    train_labels.shape = 0;
+
+    # valid_dataset.dtype = np.float32;
+    # valid_labels.dtype  = np.int32;
+    #
+    # train_dataset.dtype = np.float32;
+    # train_labels.dtype = np.int32;
+
+
+    #enumerate through pickle files
+    for pickle_file in pickle_files:
         try:
           with open(pickle_file, 'rb') as f:
             #load data set from pickle file 
@@ -239,44 +233,51 @@ def createTrainingValidationSets(pickle_files, percentTraining):
             label = visualisations.getLabel(pickle_file);
             numExamples = np.shape(letter_set)[0];
 
+            trainSize = (int)(percentTraining * numExamples);
+            validSize = numExamples - trainSize;
+
             #initialize dimensions
-            tr, lb = make_arrays(numExamples, image_size);
+            training,   labelsTraining = make_arrays(trainSize, image_size);
+            validation, labelsValidation = make_arrays(validSize, image_size);
 
             #assign values from this dataset
-            tr = letter_set; 
-            lb[:numExamples] = label;
+            training = letter_set[:trainSize, :, :];
+            labelsTraining[:trainSize] = label;
 
-            entire_dataset[lastIndex:(lastIndex+numExamples),:,:] = tr;
-            entire_labels[lastIndex:(lastIndex+numExamples)]=label;
+            validation = letter_set[trainSize:, :, :];
+            labelsValidation[:validSize] = label;
 
-            lastIndex = lastIndex + numExamples;
+            valid_dataset = np.append(valid_dataset, validation, axis=0);
+            valid_labels = np.append(valid_labels, labelsValidation, axis=0);
+
+            train_dataset = np.append(train_dataset, training, axis=0);
+            train_labels  = np.append(train_labels, labelsTraining, axis=0);
+
 
         except Exception as e:
             print('Unable to process data from', pickle_file, ':', e)
             raise
 
-    permutation = np.random.permutation(totalImages);
-    entire_dataset = entire_dataset[permutation,:,:];
-    entire_labels = entire_labels[permutation];
+    permutationTrain = np.random.permutation(np.shape(train_labels)[0]);
+    permutationValid = np.random.permutation(np.shape(valid_labels)[0]);
 
-    train_dataset = entire_dataset[:trainSize];
-    train_labels  = entire_labels[:trainSize];
-    
-    if trainSize < totalImages:
-        valid_dataset = entire_dataset[trainSize:];
-        valid_labels =  entire_labels[trainSize:];
+    train_dataset = train_dataset[permutationTrain, :, :];
+    train_labels = train_labels[permutationTrain];
 
-        return train_dataset, train_labels, valid_dataset, valid_labels
-    else:
-        return train_dataset, train_labels, None, None
+    valid_dataset = valid_dataset[permutationValid, :, :];
+    valid_labels  = valid_labels[permutationValid];
+
+    return train_dataset, train_labels, valid_dataset, valid_labels
+
 
 
 def reformatForTensorFlow(dataset, labels, maxNumLabels):
-  datasetFormated = learningAlgorithms.flatMatrix(dataset)
+  datasetFormated = learningAlgorithms.flatMatrix(dataset);
+  datasetFormated = datasetFormated.astype(np.float32);
   # Map 0 to [1.0, 0.0, 0.0 ...], 1 to [0.0, 1.0, 0.0 ...]
-  validLabelsMatrix = np.ndarray((labels.shape[0], maxNumLabels), dtype=np.float32)
+  validLabelsMatrix = np.ndarray(shape = (labels.shape[0], maxNumLabels), dtype=np.int32);
   for index in range(labels.shape[0]):
-      validLabelsMatrix[index] = learningAlgorithms.hotlabel(labels[index], maxNumLabels);
+      validLabelsMatrix[index] = learningAlgorithms.hotlabel((np.int64)(labels[index]), maxNumLabels);
   return datasetFormated, validLabelsMatrix
 
 
@@ -317,58 +318,32 @@ else:
     print('Validation:', valid_dataset.shape, valid_labels.shape)
     print('Testing:', test_dataset.shape, test_labels.shape)
 
-    pickle_file = os.path.join(data_root, 'notMNIST.pickle')
+    # pickle_file = os.path.join(data_root, 'notMNIST.pickle')
 
-    try:
-      f = open(pickle_file, 'wb')
-      save = {
-        'train_dataset': train_dataset,
-        'train_labels': train_labels,
-        'valid_dataset': valid_dataset,
-        'valid_labels': valid_labels,
-        'test_dataset': test_dataset,
-        'test_labels': test_labels,
-        }
-      pickle.dump(save, f, pickle.HIGHEST_PROTOCOL)
-      f.close()
-    except Exception as e:
-      print('Unable to save data to', pickle_file, ':', e)
-      raise
-
-    # In[ ]:
-    statinfo = os.stat(pickle_file)
-    print('Compressed pickle size:', statinfo.st_size)
-
-
-numLabels = max(max(train_labels), max(valid_labels)) + 1;
-
-trainTFDataSet, trainTFLabels = reformatForTensorFlow(train_dataset, train_labels, numLabels)
-validTFDataSet, validTFLabels = reformatForTensorFlow(valid_dataset, valid_labels, numLabels)
-testTFDataSet,  testTFLabels  = reformatForTensorFlow(test_dataset, test_labels, numLabels)
-print('Training set', trainTFDataSet.shape, trainTFLabels.shape)
-print('Validation set', validTFDataSet.shape, validTFLabels.shape)
-print('Test set', testTFDataSet.shape, testTFLabels.shape)
+    # try:
+    #   f = open(pickle_file, 'wb')
+    #   save = {
+    #     'train_dataset': train_dataset,
+    #     'train_labels': train_labels,
+    #     'valid_dataset': valid_dataset,
+    #     'valid_labels': valid_labels,
+    #     'test_dataset': test_dataset,
+    #     'test_labels': test_labels,
+    #     }
+    #   pickle.dump(save, f, pickle.HIGHEST_PROTOCOL)
+    #   f.close()
+    # except Exception as e:
+    #   print('Unable to save data to', pickle_file, ':', e)
+    #   raise
+    #
+    # # In[ ]:
+    # statinfo = os.stat(pickle_file)
+    # print('Compressed pickle size:', statinfo.st_size)
 
 
-
-# ---
-# Problem 4
-# ---------
-# Convince yourself that the data is still good after shuffling!
-# 
-# ---
-
-# Finally, let's save the data for later reuse:
-
-# In[ ]:
-
-
-#showImageFromDataSet(train_dataset, train_labels);
-#showImageFromDataSet(test_datasets, test_labels);
-#showImageFromDataSet(valid_dataset, valid_labels);
-#os.system("pause");
-
-
+numLabels = (np.int64)(max(max(train_labels), max(valid_labels)) + 1);
+# visualisations.showImageFromDataSet(train_dataset, train_labels, 3);
+# visualisations.showImageFromDataSet(test_dataset, test_labels, 3);
 
 
 # ---
@@ -378,14 +353,23 @@ print('Test set', testTFDataSet.shape, testTFLabels.shape)
 # Let's get an idea of what an off-the-shelf classifier can give you on this data. It's always good to check that there is something to learn, and that it's a problem that is not so trivial that a canned solution solves it.
 # 
 # Train a simple model on this data using 50, 100, 1000 and 5000 training samples. Hint: you can use the LogisticRegression model from sklearn.linear_model.
-# 
 # Optional question: train an off-the-shelf model on all the data!
 # 
 # ---
 
-bestLogisticModel = learningAlgorithms.logisticRegression(train_dataset, train_labels, test_dataset, test_labels, valid_dataset, valid_labels, 5000);
+# bestLogisticModel = learningAlgorithms.logisticRegression(train_dataset, train_labels, test_dataset, test_labels, valid_dataset, valid_labels, 5000);
+# #a sanity check on logit regression
+# numChecks = 50;
+# for index in range(numChecks):
+#     print("Real class " +  str(test_labels[index]) + " predicted " + str(bestLogisticModel.predict(learningAlgorithms.flatMatrix(test_dataset)[index])));
 
-#a sanity check on logit regression
-numChecks = 50;
-for index in range(numChecks):
-    print("Real class " +  str(test_labels[index]) + " predicted " + str(bestLogisticModel.predict(learningAlgorithms.flatMatrix(test_dataset)[index])));
+
+train_dataset, train_labels = reformatForTensorFlow(train_dataset, train_labels, numLabels)
+valid_dataset, valid_labels = reformatForTensorFlow(valid_dataset, valid_labels, numLabels)
+test_dataset, test_labels  = reformatForTensorFlow(test_dataset, test_labels, numLabels)
+
+print('Training set', train_dataset.shape, train_labels.shape)
+print('Validation set', valid_dataset.shape, valid_labels.shape)
+print('Test set', test_dataset.shape, test_labels.shape)
+
+learningAlgorithms.logisticRegressionWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_dataset, valid_labels, 5000);

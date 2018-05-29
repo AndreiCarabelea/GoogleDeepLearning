@@ -97,16 +97,15 @@ def showHistogramsForTrainTest(train_datasets, test_datasets):
 
 # Let's verify that the data still looks good. Displaying a sample of the labels and images from the ndarray. Hint: you can use matplotlib.pyplot.
 #PROBLEM 4 GOOD
-def showImageFromDataSet(imageset, labelset):
-    MAX_SELECTION_FROM_CATEGORY = 1;
+def showImageFromDataSet(imageset, labelset, maxSelections):
     permut = np.random.permutation(np.shape(imageset)[0]);
-    permut = permut[:MAX_SELECTION_FROM_CATEGORY];
+    permut = permut[:maxSelections];
     fig = plt.figure()
     count = 0;
     for index in permut:
         count = count + 1;
-        ax1 = fig.add_subplot(1, MAX_SELECTION_FROM_CATEGORY, count);
-        ax1.set_title(chr(labelset[index]+97));
+        ax1 = fig.add_subplot(1, maxSelections, count);
+        ax1.set_title(chr((int(labelset[index]+97))));
         ax1.imshow(imageset[index])
 
 
