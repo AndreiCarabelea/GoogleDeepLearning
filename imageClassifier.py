@@ -341,7 +341,7 @@ else:
     # print('Compressed pickle size:', statinfo.st_size)
 
 
-numLabels = (np.int64)(max(max(train_labels), max(valid_labels)) + 1);
+
 # visualisations.showImageFromDataSet(train_dataset, train_labels, 3);
 # visualisations.showImageFromDataSet(test_dataset, test_labels, 3);
 
@@ -363,7 +363,7 @@ numLabels = (np.int64)(max(max(train_labels), max(valid_labels)) + 1);
 # for index in range(numChecks):
 #     print("Real class " +  str(test_labels[index]) + " predicted " + str(bestLogisticModel.predict(learningAlgorithms.flatMatrix(test_dataset)[index])));
 
-
+numLabels = (np.int64)(max(max(train_labels), max(valid_labels)) + 1);
 train_dataset, train_labels = reformatForTensorFlow(train_dataset, train_labels, numLabels)
 valid_dataset, valid_labels = reformatForTensorFlow(valid_dataset, valid_labels, numLabels)
 test_dataset, test_labels  = reformatForTensorFlow(test_dataset, test_labels, numLabels)
@@ -372,4 +372,5 @@ print('Training set', train_dataset.shape, train_labels.shape)
 print('Validation set', valid_dataset.shape, valid_labels.shape)
 print('Test set', test_dataset.shape, test_labels.shape)
 
-learningAlgorithms.logisticRegressionWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_dataset, valid_labels, 5000);
+# _,_ = learningAlgorithms.logisticRegressionWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_dataset, valid_labels, 5000, 0.1);
+_,_ = learningAlgorithms.nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_dataset, valid_labels, 5000, 0.1);
