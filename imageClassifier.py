@@ -373,4 +373,4 @@ print('Validation set', valid_dataset.shape, valid_labels.shape)
 print('Test set', test_dataset.shape, test_labels.shape)
 
 # _,_ = learningAlgorithms.logisticRegressionWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_dataset, valid_labels, 5000, 0.1);
-_,_ = learningAlgorithms.nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_dataset, valid_labels, 5000, 0.1);
+_,_ = learningAlgorithms.nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_dataset, valid_labels, 5000, 150, False);

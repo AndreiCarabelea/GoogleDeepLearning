@@ -77,8 +77,8 @@ def logisticRegressionWithTF(train_dataset, train_labels, test_dataset, test_lab
     # With gradient descent training, even this much data is prohibitive.
     # Subset the training data for faster turnaround.
 
-    lambdas = [0.01, 0.03, 0.09, 0.3, 0.9, 3, 9]
-    globalError = 1000;
+    lambdas = [0, 0.01, 0.03, 0.09, 0.3, 0.9, 3, 9]
+    globalError = -1;
     # m*n 2d matrix
     testPredictions = np.array([]);
     #scalar, test set classification accuracy.
@@ -121,7 +121,8 @@ def logisticRegressionWithTF(train_dataset, train_labels, test_dataset, test_lab
             # These are not part of training, but merely here so that we can report
             # accuracy figures as we train.
             train_prediction = tf.nn.softmax(logits)
-            valid_prediction = tf.nn.softmax(tf.matmul(tf_valid_dataset, weights) + biases)
+            valid_logits = tf.matmul(tf_valid_dataset, weights) + biases;
+            valid_prediction = tf.nn.softmax(valid_logits);
             test_prediction = tf.nn.softmax(tf.matmul(tf_test_dataset, weights) + biases)
         with tf.Session(graph=graph) as session:
             # This is a one-time operation which ensures the parameters get initialized as
@@ -130,7 +131,7 @@ def logisticRegressionWithTF(train_dataset, train_labels, test_dataset, test_lab
 
             tf.global_variables_initializer().run();
 
-            minError = 1000;
+            minError = -1;
             for step in range(400):
                 # Run the computations. We tell .run() that we want to run the optimizer,
                 # and get the loss value and the training predictions returned as numpy
@@ -144,8 +145,13 @@ def logisticRegressionWithTF(train_dataset, train_labels, test_dataset, test_lab
 
                 _, l, predictions = session.run([optimizer, loss, train_prediction], feed_dict=fd);
 
-                crossEntropyError = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=valid_labels, logits=valid_prediction.eval()));
+                crossEntropyError = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=valid_labels, logits=valid_logits.eval()));
                 ce =  crossEntropyError.eval();
+
+                if minError < 0:
+                    minError = ce;
+                if globalError < 0:
+                    globalError = ce;
 
                 if(ce < minError ):
                     print("New minimum error found " + str(ce) + " steps " + str(step) + " lambda-reg " + str(lambdaV));
@@ -167,81 +173,100 @@ def logisticRegressionWithTF(train_dataset, train_labels, test_dataset, test_lab
 
 #the datasets here are 2d arrays
 def nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_dataset,
-                       valid_labels, desiredNumberOfTrainingExamples, batchSizePercent):
+                       valid_labels, desiredNumberOfTrainingExamples, batch_size, regularization = True):
 
     desiredNumberOfTrainingExamples = min(desiredNumberOfTrainingExamples, train_labels.shape[0]);
+    batch_size = min(batch_size, desiredNumberOfTrainingExamples);
+
     num_labels = np.shape(train_labels)[1];
-    batch_size = (np.int64)(batchSizePercent*desiredNumberOfTrainingExamples);
     # With gradient descent training, even this much data is prohibitive.
     # Subset the training data for faster turnaround.
 
-    lambdas = [0.01, 0.03, 0.09, 3, 9]
-    globalError = 1000;
+    lambdas = [0, 0.1, 0.3, 0.6, 1, 2]
+    globalError = -1;
     # m*n 2d matrix
     testPredictions = np.array([]);
     #scalar, test set classification accuracy.
     accRes = 0 ;
 
-    graph = tf.Graph()
+    graph = tf.Graph();
+
+
     for lambdaV in lambdas:
         with graph.as_default():
             # Input data.
             # Load the training, validation and test data into constants that are
             # attached to the graph.
 
+            global_step = tf.Variable(0);
+            maxNumSteps = (int)((300 * desiredNumberOfTrainingExamples) / batch_size);
             tf_train_dataset = tf.placeholder(tf.float32, shape=(batch_size, image_size * image_size));
             tf_train_labels = tf.placeholder(tf.float32, shape=(batch_size, num_labels));
             tf_valid_dataset = tf.constant(valid_dataset);
             tf_test_dataset = tf.constant(test_dataset);
-            tf_lambda = tf.constant(lambdaV);
+            tf_lambda = tf.constant(lambdaV, dtype=np.float32);
 
             # Variables.
             # These are the parameters that we are going to be training. The weight
             # matrix will be initialized using random values following a (truncated)
             # normal distribution. The biases get initialized to zero.
 
-            hiddenLayerWidth = (int)(np.shape(train_dataset)[1]/100)+1;
+            hiddenLayerWidth = 784;
 
-            weights1 = tf.Variable(tf.truncated_normal([image_size * image_size, hiddenLayerWidth]))
-            weights2 = tf.Variable(tf.truncated_normal([hiddenLayerWidth, hiddenLayerWidth]))
-            weights3 = tf.Variable(tf.truncated_normal([hiddenLayerWidth, num_labels]))
+            weights1 = tf.Variable(tf.truncated_normal([image_size * image_size, hiddenLayerWidth]));
+            weights2 = tf.Variable(tf.truncated_normal([hiddenLayerWidth, hiddenLayerWidth]));
+            weights3 = tf.Variable(tf.truncated_normal([hiddenLayerWidth, num_labels]));
 
             biases1 = tf.Variable(tf.zeros([hiddenLayerWidth]));
             biases2 = tf.Variable(tf.zeros([hiddenLayerWidth]));
-            biases3 = tf.Variable(tf.zeros([num_labels]))
+            biases3 = tf.Variable(tf.zeros([num_labels]));
 
             # Training computation.
             # We multiply the inputs with the weight matrix, and add biases. We compute
             # the softmax and cross-entropy (it's one operation in TensorFlow, because
             # it's very common, and it can be optimized). We take the average of this
             # cross-entropy across all training examples: that's our loss.
-            y1 = tf.nn.sigmoid(tf.matmul(tf_train_dataset, weights1) + biases1)
-            y2 = tf.nn.sigmoid(tf.matmul(y1, weights2)+biases2)
-            logits = tf.matmul(y2, weights3)+biases3;
+            y1 = tf.matmul(tf_train_dataset, weights1) + biases1;
+            y1 = tf.nn.leaky_relu(y1);
+            y2 = tf.matmul(y1, weights2) + biases2;
+            y2 = tf.nn.leaky_relu(y2);
+            y3 = tf.matmul(y2, weights3) + biases3;
 
-            loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=tf_train_labels, logits=logits));
-            t1 = tf.multiply(tf.reduce_sum(tf.square(weights1)), tf_lambda);
-            t2 = tf.multiply(tf.reduce_sum(tf.square(weights2)), tf_lambda);
-            t3 = tf.multiply(tf.reduce_sum(tf.square(weights3)), tf_lambda);
-            loss = loss + t1 + t2 + t3;
+
+            loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=tf_train_labels, logits=y3));
+
+            if(regularization == True):
+                t1 = tf.multiply(tf.reduce_sum(tf.square(weights1)), tf_lambda);
+                t2 = tf.multiply(tf.reduce_sum(tf.square(weights2)), tf_lambda);
+                t3 = tf.multiply(tf.reduce_sum(tf.square(weights3)), tf_lambda);
+                loss = loss + t1 + t2 + t3;
 
 
             # Optimizer.
             # We are going to find the minimum of this loss using gradient descent.
-            optimizer = tf.train.GradientDescentOptimizer(0.1).minimize(loss)
+            # learning_rate = tf.train.exponential_decay(learning_rate = 0.6, global_step = global_step, decay_steps=maxNumSteps,decay_rate=0.999, staircase=True);
+            # optimizer = tf.train.GradientDescentOptimizer(learning_rate).minimize(loss, global_step=global_step);
+            #
+            # optimizer = tf.train.GradientDescentOptimizer(0.6).minimize(loss);
+            optimizer = tf.train.AdamOptimizer(learning_rate=0.5).minimize(loss);
 
             # Predictions for the training, validation, and test data.
             # These are not part of training, but merely here so that we can report
             # accuracy figures as we train.
-            train_prediction = tf.nn.softmax(logits)
 
-            y1v = tf.nn.sigmoid(tf.matmul(tf_valid_dataset, weights1) + biases1)
-            y2v = tf.nn.sigmoid(tf.matmul(y1v ,weights2) + biases2)
-            logitsV = tf.matmul(y2v, weights3) + biases3;
+            train_prediction = tf.nn.softmax(y3);
+
+            y1v = tf.matmul(tf_valid_dataset, weights1) + biases1
+            y1v = tf.nn.leaky_relu(y1v)
+            y2v = tf.matmul(y1v ,weights2) + biases2
+            y2v = tf.nn.leaky_relu(y2v)
+            logitsV  = tf.matmul(y2v, weights3) + biases3;
             valid_prediction = tf.nn.softmax(logitsV);
 
-            y1t = tf.nn.sigmoid(tf.matmul(tf_test_dataset, weights1) + biases1)
-            y2t = tf.nn.sigmoid(tf.matmul(y1t , weights2) + biases2)
+            y1t = tf.matmul(tf_test_dataset, weights1) + biases1
+            y1t = tf.nn.leaky_relu(y1t);
+            y2t = tf.matmul(y1t , weights2) + biases2;
+            y2t = tf.nn.leaky_relu(y2t);
             logitsT = tf.matmul(y2t, weights3) + biases3;
             test_prediction = tf.nn.softmax(logitsT);
 
@@ -253,13 +278,20 @@ def nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_datas
 
             tf.global_variables_initializer().run();
 
-            lastError = 1000;
-            for step in range(400):
+            currentIterationErros = np.ndarray(shape=0, dtype=np.float32);
+            currentIterationErros = np.append(currentIterationErros, 3);
+
+            for global_step in range(maxNumSteps):
                 # Run the computations. We tell .run() that we want to run the optimizer,
                 # and get the loss value and the training predictions returned as numpy
                 # arrays.
 
-                offset = (step * batch_size) % (desiredNumberOfTrainingExamples - batch_size)
+
+
+                offset = global_step * batch_size;
+                if( offset >= desiredNumberOfTrainingExamples):
+                    offset = 0;
+
 
                 batch_data = train_dataset[offset:(offset + batch_size), :]
                 batch_labels = train_labels[offset:(offset + batch_size), :]
@@ -267,20 +299,20 @@ def nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_datas
 
                 _, l, predictions = session.run([optimizer, loss, train_prediction], feed_dict=fd);
 
-                crossEntropyError = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=valid_labels, logits=valid_prediction.eval()));
-                ce =  crossEntropyError.eval();
+                crossEntropyError = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=valid_labels, logits=logitsV.eval()));
+                ce = crossEntropyError.eval();
+                print("Error found " + str(ce) + " steps " + str(global_step) + " lambda-reg " + str(lambdaV));
+                # if ( ce < minError ):
+                #     minError = ce;
+                #     print("New minimum error found " + str(ce) + " steps " + str(global_step) + " lambda-reg " + str(lambdaV));
+                # else:
+                #     break;
 
-
-                if(ce > lastError ):
-                    break;
-                else:
-                    print("New minimum error found " + str(ce) + " steps " + str(step) + " lambda-reg " + str(lambdaV));
-
-                lastError = ce;
-
+                if globalError < 0:
+                    globalError = ce;
 
                 if(ce < globalError):
-                    print("New minimum global error found " + str(ce) + " steps " + str(step) + " lambda-reg " + str(lambdaV));
+                    print("New minimum global error found " + str(ce) + " steps " + str(global_step) + " lambda-reg " + str(lambdaV));
                     globalError = ce;
                     testPredictions = test_prediction.eval();
                     accRes = accuracy(testPredictions, test_labels);
