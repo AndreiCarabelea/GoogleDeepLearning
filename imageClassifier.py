@@ -318,50 +318,8 @@ else:
     print('Validation:', valid_dataset.shape, valid_labels.shape)
     print('Testing:', test_dataset.shape, test_labels.shape)
 
-    # pickle_file = os.path.join(data_root, 'notMNIST.pickle')
-
-    # try:
-    #   f = open(pickle_file, 'wb')
-    #   save = {
-    #     'train_dataset': train_dataset,
-    #     'train_labels': train_labels,
-    #     'valid_dataset': valid_dataset,
-    #     'valid_labels': valid_labels,
-    #     'test_dataset': test_dataset,
-    #     'test_labels': test_labels,
-    #     }
-    #   pickle.dump(save, f, pickle.HIGHEST_PROTOCOL)
-    #   f.close()
-    # except Exception as e:
-    #   print('Unable to save data to', pickle_file, ':', e)
-    #   raise
-    #
-    # # In[ ]:
-    # statinfo = os.stat(pickle_file)
-    # print('Compressed pickle size:', statinfo.st_size)
-
-
-
 # visualisations.showImageFromDataSet(train_dataset, train_labels, 3);
 # visualisations.showImageFromDataSet(test_dataset, test_labels, 3);
-
-
-# ---
-# Problem 6
-# ---------
-# 
-# Let's get an idea of what an off-the-shelf classifier can give you on this data. It's always good to check that there is something to learn, and that it's a problem that is not so trivial that a canned solution solves it.
-# 
-# Train a simple model on this data using 50, 100, 1000 and 5000 training samples. Hint: you can use the LogisticRegression model from sklearn.linear_model.
-# Optional question: train an off-the-shelf model on all the data!
-# 
-# ---
-
-# bestLogisticModel = learningAlgorithms.logisticRegression(train_dataset, train_labels, test_dataset, test_labels, valid_dataset, valid_labels, 5000);
-# #a sanity check on logit regression
-# numChecks = 50;
-# for index in range(numChecks):
-#     print("Real class " +  str(test_labels[index]) + " predicted " + str(bestLogisticModel.predict(learningAlgorithms.flatMatrix(test_dataset)[index])));
 
 numLabels = (np.int64)(max(max(train_labels), max(valid_labels)) + 1);
 train_dataset, train_labels = reformatForTensorFlow(train_dataset, train_labels, numLabels)
@@ -373,4 +331,5 @@ print('Validation set', valid_dataset.shape, valid_labels.shape)
 print('Test set', test_dataset.shape, test_labels.shape)
 
 # _,_ = learningAlgorithms.logisticRegressionWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_dataset, valid_labels, 5000, 0.1);
-_,_ = learningAlgorithms.nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_dataset, valid_labels, np.shape(train_dataset)[0], 150, False);
+_,_ = learningAlgorithms.nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_dataset, valid_labels, np.shape(train_dataset)[0], 150,
+                                  useRegularization=False, useDropOut=True, useCovNet=True);
