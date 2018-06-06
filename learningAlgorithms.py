@@ -1,6 +1,7 @@
 from sklearn.linear_model import LogisticRegression
 import tensorflow as tf
 import numpy as np
+import multiprocessing
 image_size = 28;
 
 #unused usefull for reference
@@ -172,8 +173,28 @@ def logisticRegressionWithTF(train_dataset, train_labels, test_dataset, test_lab
 
 
 #the datasets here are 2d arrays
+#implements two layers deep nn
 def nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_dataset,
                        valid_labels, desiredNumberOfTrainingExamples, batch_size, regularization = True):
+
+    logicalProcessors = multiprocessing.cpu_count();
+    cluster = tf.train.ClusterSpec({
+        "worker": [
+            "localhost:2222",
+            "localhost:2223",
+            "localhost:2224"
+        ],
+        "ps": [
+            "localhost:2225",
+            "localhost:2226"
+        ]})
+
+    serverWorker1 = tf.train.Server(cluster, job_name="worker", task_index=0)
+    serverWorker2 = tf.train.Server(cluster, job_name="worker", task_index=1)
+    serverWorker3 = tf.train.Server(cluster, job_name="worker", task_index=2)
+
+    serverPs1 = tf.train.Server(cluster, job_name="ps", task_index=0)
+    serverPs2 = tf.train.Server(cluster, job_name="ps", task_index=1)
 
     desiredNumberOfTrainingExamples = min(desiredNumberOfTrainingExamples, train_labels.shape[0]);
     batch_size = min(batch_size, desiredNumberOfTrainingExamples);
@@ -182,12 +203,23 @@ def nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_datas
     # With gradient descent training, even this much data is prohibitive.
     # Subset the training data for faster turnaround.
 
-    lambdas = [0, 0.1, 0.3, 0.6, 1, 2]
+    lambdas = [0]
     globalError = -1;
     # m*n 2d matrix
     testPredictions = np.array([]);
     #scalar, test set classification accuracy.
     accRes = 0 ;
+
+
+    solutions = np.roots(np.array([1, image_size * image_size + num_labels + 2 , num_labels - desiredNumberOfTrainingExamples]));
+
+    hiddenLayerWidth = 1;
+    if np.isreal(solutions[0]) and solutions[0] > 0:
+        hiddenLayerWidth = np.ceil(solutions[0]);
+    else:
+        hiddenLayerWidth = np.ceil(solutions[1]);
+
+    hiddenLayerWidth = (int)(hiddenLayerWidth);
 
     graph = tf.Graph();
 
@@ -197,81 +229,85 @@ def nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_datas
             # Input data.
             # Load the training, validation and test data into constants that are
             # attached to the graph.
-
-            global_step = tf.Variable(0);
-            maxNumSteps = (int)((300 * desiredNumberOfTrainingExamples) / batch_size);
-            tf_train_dataset = tf.placeholder(tf.float32, shape=(batch_size, image_size * image_size));
-            tf_train_labels = tf.placeholder(tf.float32, shape=(batch_size, num_labels));
-            tf_valid_dataset = tf.constant(valid_dataset);
-            tf_test_dataset = tf.constant(test_dataset);
-            tf_lambda = tf.constant(lambdaV, dtype=np.float32);
+            with tf.device("/job:ps/task:0/cpu:0"):
+                global_step = tf.Variable(0);
+                maxNumSteps = (int)((100 * desiredNumberOfTrainingExamples) / batch_size);
+                tf_train_dataset = tf.placeholder(tf.float32, shape=(batch_size, image_size * image_size));
+                tf_train_labels = tf.placeholder(tf.float32, shape=(batch_size, num_labels));
+                tf_valid_dataset = tf.constant(valid_dataset);
+                tf_test_dataset = tf.constant(test_dataset);
+                tf_lambda = tf.constant(lambdaV, dtype=np.float32);
 
             # Variables.
             # These are the parameters that we are going to be training. The weight
             # matrix will be initialized using random values following a (truncated)
             # normal distribution. The biases get initialized to zero.
+            with tf.device("/job:ps/cpu:0"):
+                hl = hiddenLayerWidth;
+                weights1 = tf.Variable(tf.truncated_normal([image_size * image_size, hl]));
+                weights2 = tf.Variable(tf.truncated_normal([hl, hl]));
+                weights3 = tf.Variable(tf.truncated_normal([hl, num_labels]));
 
-            hiddenLayerWidth = 784;
-
-            weights1 = tf.Variable(tf.truncated_normal([image_size * image_size, hiddenLayerWidth]));
-            weights2 = tf.Variable(tf.truncated_normal([hiddenLayerWidth, hiddenLayerWidth]));
-            weights3 = tf.Variable(tf.truncated_normal([hiddenLayerWidth, num_labels]));
-
-            biases1 = tf.Variable(tf.zeros([hiddenLayerWidth]));
-            biases2 = tf.Variable(tf.zeros([hiddenLayerWidth]));
-            biases3 = tf.Variable(tf.zeros([num_labels]));
+                biases1 = tf.Variable(tf.zeros([hl]));
+                biases2 = tf.Variable(tf.zeros([hl]));
+                biases3 = tf.Variable(tf.zeros([num_labels]));
 
             # Training computation.
             # We multiply the inputs with the weight matrix, and add biases. We compute
             # the softmax and cross-entropy (it's one operation in TensorFlow, because
             # it's very common, and it can be optimized). We take the average of this
             # cross-entropy across all training examples: that's our loss.
-            y1 = tf.matmul(tf_train_dataset, weights1) + biases1;
-            y1 = tf.nn.leaky_relu(y1);
-            y2 = tf.matmul(y1, weights2) + biases2;
-            y2 = tf.nn.leaky_relu(y2);
-            y3 = tf.matmul(y2, weights3) + biases3;
+
+            with tf.device("/job:worker/task:0/gpu:0"):
+                y1 = tf.matmul(tf_train_dataset, weights1) + biases1;
+                y1 = tf.nn.leaky_relu(y1);
+                y2 = tf.matmul(y1, weights2) + biases2;
+                y2 = tf.nn.leaky_relu(y2);
+                y3 = tf.matmul(y2, weights3) + biases3;
+
+                loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=tf_train_labels, logits=y3));
+
+            with tf.device("/job:worker/task:1/cpu:0"):
+                if(regularization == True):
+                    t1 = tf.multiply(tf.reduce_sum(tf.square(weights1)), tf_lambda);
+                    t2 = tf.multiply(tf.reduce_sum(tf.square(weights2)), tf_lambda);
+                    t3 = tf.multiply(tf.reduce_sum(tf.square(weights3)), tf_lambda);
+                    loss = loss + t1 + t2 + t3;
 
 
-            loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=tf_train_labels, logits=y3));
+                # Optimizer.
+                # We are going to find the minimum of this loss using gradient descent.
+                # learning_rate = tf.train.exponential_decay(learning_rate = 0.6, global_step = global_step, decay_steps=maxNumSteps,decay_rate=0.999, staircase=True);
+                # optimizer = tf.train.GradientDescentOptimizer(learning_rate).minimize(loss, global_step=global_step);
+                #
+                # optimizer = tf.train.GradientDescentOptimizer(0.6).minimize(loss);
+                optimizer = tf.train.AdamOptimizer().minimize(loss);
 
-            if(regularization == True):
-                t1 = tf.multiply(tf.reduce_sum(tf.square(weights1)), tf_lambda);
-                t2 = tf.multiply(tf.reduce_sum(tf.square(weights2)), tf_lambda);
-                t3 = tf.multiply(tf.reduce_sum(tf.square(weights3)), tf_lambda);
-                loss = loss + t1 + t2 + t3;
+                # Predictions for the training, validation, and test data.
+                # These are not part of training, but merely here so that we can report
+                # accuracy figures as we train.
 
+                train_prediction = tf.nn.softmax(y3);
 
-            # Optimizer.
-            # We are going to find the minimum of this loss using gradient descent.
-            # learning_rate = tf.train.exponential_decay(learning_rate = 0.6, global_step = global_step, decay_steps=maxNumSteps,decay_rate=0.999, staircase=True);
-            # optimizer = tf.train.GradientDescentOptimizer(learning_rate).minimize(loss, global_step=global_step);
-            #
-            # optimizer = tf.train.GradientDescentOptimizer(0.6).minimize(loss);
-            optimizer = tf.train.AdamOptimizer(learning_rate=0.5).minimize(loss);
-
-            # Predictions for the training, validation, and test data.
-            # These are not part of training, but merely here so that we can report
-            # accuracy figures as we train.
-
-            train_prediction = tf.nn.softmax(y3);
-
-            y1v = tf.matmul(tf_valid_dataset, weights1) + biases1
-            y1v = tf.nn.leaky_relu(y1v)
-            y2v = tf.matmul(y1v ,weights2) + biases2
-            y2v = tf.nn.leaky_relu(y2v)
-            logitsV  = tf.matmul(y2v, weights3) + biases3;
-            valid_prediction = tf.nn.softmax(logitsV);
-
-            y1t = tf.matmul(tf_test_dataset, weights1) + biases1
-            y1t = tf.nn.leaky_relu(y1t);
-            y2t = tf.matmul(y1t , weights2) + biases2;
-            y2t = tf.nn.leaky_relu(y2t);
-            logitsT = tf.matmul(y2t, weights3) + biases3;
-            test_prediction = tf.nn.softmax(logitsT);
+            with tf.device("/job:worker/task:2"):
+                with tf.device("/gpu:0"):
+                    y1v = tf.matmul(tf_valid_dataset, weights1) + biases1
+                    y1v = tf.nn.leaky_relu(y1v)
+                    y2v = tf.matmul(y1v ,weights2) + biases2
+                    y2v = tf.nn.leaky_relu(y2v)
+                    logitsV  = tf.matmul(y2v, weights3) + biases3;
+                    valid_prediction = tf.nn.softmax(logitsV);
+                with tf.device("/cpu:0"):
+                    y1t = tf.matmul(tf_test_dataset, weights1) + biases1
+                    y1t = tf.nn.leaky_relu(y1t);
+                    y2t = tf.matmul(y1t , weights2) + biases2;
+                    y2t = tf.nn.leaky_relu(y2t);
+                    logitsT = tf.matmul(y2t, weights3) + biases3;
+                    test_prediction = tf.nn.softmax(logitsT);
 
 
-        with tf.Session(graph=graph) as session:
+        with tf.Session(graph=graph, target=serverPs1.target, config = tf.ConfigProto(intra_op_parallelism_threads=logicalProcessors*4, inter_op_parallelism_threads=logicalProcessors*4, \
+                        allow_soft_placement=True)) as session:
             # This is a one-time operation which ensures the parameters get initialized as
             # we described in the graph: random weights for the matrix, zeros for the
             # biases.
@@ -279,13 +315,11 @@ def nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_datas
             tf.global_variables_initializer().run();
 
             currentIterationErros = np.ndarray(shape=0, dtype=np.float32);
-            currentIterationErros = np.append(currentIterationErros, 3);
 
             for global_step in range(maxNumSteps):
                 # Run the computations. We tell .run() that we want to run the optimizer,
                 # and get the loss value and the training predictions returned as numpy
                 # arrays.
-
 
 
                 offset = global_step * batch_size;
@@ -302,11 +336,13 @@ def nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_datas
                 crossEntropyError = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=valid_labels, logits=logitsV.eval()));
                 ce = crossEntropyError.eval();
                 print("Error found " + str(ce) + " steps " + str(global_step) + " lambda-reg " + str(lambdaV));
-                # if ( ce < minError ):
-                #     minError = ce;
-                #     print("New minimum error found " + str(ce) + " steps " + str(global_step) + " lambda-reg " + str(lambdaV));
-                # else:
-                #     break;
+
+                if currentIterationErros.shape[0] > 10:
+                    if ce > np.mean(currentIterationErros[-10:]):
+                        break;
+
+                currentIterationErros = np.append(currentIterationErros, ce);
+
 
                 if globalError < 0:
                     globalError = ce;
