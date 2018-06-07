@@ -2,7 +2,7 @@ from sklearn.linear_model import LogisticRegression
 import tensorflow as tf
 import numpy as np
 import multiprocessing
-image_size = 28;
+import psutil
 
 #unused usefull for reference
 def softmax(x):
@@ -62,11 +62,10 @@ def logisticRegression(train_dataset, train_labels, test_dataset, test_labels, v
     print("Accuracy on test data " + str(bestLogisticModel.score(flatMatrix(test_dataset), test_labels)));
     return bestLogisticModel;
 
-#this works with np arrys
-def accuracy(predictions, labels):
-  return (100.0 * np.sum(np.argmax(predictions, 1) == np.argmax(labels, 1))
-          / predictions.shape[0])
-
+#predictions is a tensor
+def accuracy(tf_Predictions, labels):
+    predictions = tf_Predictions.eval();
+    return 100.0 * np.sum(np.argmax(predictions, 1) == np.argmax(labels, 1)) / np.shape(labels)[0];
 
 #the datasets here are 2d arrays
 def logisticRegressionWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_dataset,
@@ -84,6 +83,7 @@ def logisticRegressionWithTF(train_dataset, train_labels, test_dataset, test_lab
     testPredictions = np.array([]);
     #scalar, test set classification accuracy.
     accRes = 0 ;
+    image_size = (int)(np.sqrt(np.shape(train_dataset)[1]));
 
     graph = tf.Graph()
     for lambdaV in lambdas:
@@ -121,10 +121,9 @@ def logisticRegressionWithTF(train_dataset, train_labels, test_dataset, test_lab
             # Predictions for the training, validation, and test data.
             # These are not part of training, but merely here so that we can report
             # accuracy figures as we train.
-            train_prediction = tf.nn.softmax(logits)
+            tf_TrainPrediction = tf.nn.softmax(logits)
             valid_logits = tf.matmul(tf_valid_dataset, weights) + biases;
-            valid_prediction = tf.nn.softmax(valid_logits);
-            test_prediction = tf.nn.softmax(tf.matmul(tf_test_dataset, weights) + biases)
+            tf_testPrediction = tf.nn.softmax(tf.matmul(tf_test_dataset, weights) + biases)
         with tf.Session(graph=graph) as session:
             # This is a one-time operation which ensures the parameters get initialized as
             # we described in the graph: random weights for the matrix, zeros for the
@@ -144,7 +143,7 @@ def logisticRegressionWithTF(train_dataset, train_labels, test_dataset, test_lab
                 batch_labels = train_labels[offset:(offset + batch_size), :]
                 fd = {tf_train_dataset: batch_data, tf_train_labels: batch_labels}
 
-                _, l, predictions = session.run([optimizer, loss, train_prediction], feed_dict=fd);
+                _, l, predictions = session.run([optimizer, loss, tf_TrainPrediction], feed_dict=fd);
 
                 crossEntropyError = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=valid_labels, logits=valid_logits.eval()));
                 ce =  crossEntropyError.eval();
@@ -163,25 +162,30 @@ def logisticRegressionWithTF(train_dataset, train_labels, test_dataset, test_lab
                 if(ce < globalError):
                     print("New minimum global error found " + str(ce) + " steps " + str(step) + " lambda-reg " + str(lambdaV));
                     globalError = ce;
-                    testPredictions = test_prediction.eval();
-                    accRes = accuracy(testPredictions, test_labels);
+                    accRes = accuracy(tf_testPrediction, test_labels);
                     print('New test accuracy: ' + str(accRes));
 
     return testPredictions, accRes;
 
 
-
-
 #the datasets here are 2d arrays
 #implements two layers deep nn
 
-
+#data is 2d array
+def truncate(data, maxSize):
+    desiredSize = min(np.shape(data)[0], maxSize);
+    if data.ndim > 1:
+        return data[:desiredSize, :];
+    return  data[:desiredSize];
 
 
 def nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_dataset,
-             valid_labels, desiredNumberOfTrainingExamples, batch_size, useRegularization = False, useCovNet = True, useDropOut = True, numChannels = 1):
+             valid_labels, desiredNumberOfValidationExamples, batch_size, useRegularization = False, useCovNet = True, useDropOut = True, numChannels = 1):
 
     logicalProcessors = multiprocessing.cpu_count();
+    image_size = (int)(np.sqrt(np.shape(train_dataset)[1]));
+    numTrainingExamples = np.shape(train_labels)[0];
+
     cluster = tf.train.ClusterSpec({
         "worker": [
             "localhost:2222",
@@ -200,8 +204,11 @@ def nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_datas
     serverPs1 = tf.train.Server(cluster, job_name="ps", task_index=0)
     serverPs2 = tf.train.Server(cluster, job_name="ps", task_index=1)
 
-    desiredNumberOfTrainingExamples = min(desiredNumberOfTrainingExamples, train_labels.shape[0]);
-    batch_size = min(batch_size, desiredNumberOfTrainingExamples);
+    valid_dataset = truncate(valid_dataset, desiredNumberOfValidationExamples);
+    valid_labels = truncate(valid_labels, desiredNumberOfValidationExamples);
+
+    test_dataset = truncate(test_dataset, desiredNumberOfValidationExamples);
+    test_labels = truncate(test_labels, desiredNumberOfValidationExamples);
 
     num_labels = np.shape(train_labels)[1];
     # With gradient descent training, even this much data is prohibitive.
@@ -213,28 +220,11 @@ def nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_datas
     #scalar, test set classification accuracy.
     accRes = 0 ;
 
-
-    solutions = np.roots(np.array([1, image_size * image_size + num_labels + 2 , num_labels - desiredNumberOfTrainingExamples]));
-    hiddenLayerWidth = 1;
-    if np.isreal(solutions[0]) and solutions[0] > 0:
-        hiddenLayerWidth = np.ceil(solutions[0]);
-    else:
-        hiddenLayerWidth = np.ceil(solutions[1]);
-
-    hiddenLayerWidth = (int)(hiddenLayerWidth);
-
-
     #covnets use cubes
     if useCovNet:
         train_dataset = train_dataset.reshape((-1, image_size, image_size, numChannels)).astype(np.float32)
         test_dataset = test_dataset.reshape((-1, image_size, image_size, numChannels)).astype(np.float32)
         valid_dataset = valid_dataset.reshape((-1, image_size, image_size, numChannels)).astype(np.float32)
-
-        # to be replaced to the actual solution of the equation number of training examples
-        # to be number of parameters of the network
-        #full connected regular network hidden layer size
-        hiddenLayerWidth = 4;
-
 
     graph = tf.Graph();
 
@@ -246,7 +236,7 @@ def nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_datas
         tf_lambda = tf.constant(lambdaV, dtype=np.float32);
 
         with tf.device("/job:ps/task:0/cpu:0"):
-            maxNumSteps = (int)((100 * desiredNumberOfTrainingExamples) / batch_size);
+            maxNumSteps = 200;
             if not useCovNet:
                 tf_train_dataset = tf.placeholder(tf.float32, shape=(batch_size, image_size * image_size));
             else:
@@ -262,18 +252,48 @@ def nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_datas
             #numpy arrays so not necessary to use tensor for labels
             tf_test_dataset = tf.constant(test_dataset);
 
+        def computeRequiredMemoryAndNumberofParameters():
+            if useCovNet:
+                # for hiddenLayerWidth in [4, 8, 16, 32, 64, 128, 256]:
+                #     for covNetDepth in [2, 4, 8, 16, 32, 64]:
+                #         nparams = patchSize ** 2 * covNetDepth * (numChannels + covNetDepth) + 2 * covNetDepth
+                #         nparams = nparams + hiddenLayerWidth * (hiddenLayerWidth + num_labels + 2 + image_size * image_size / 8) + num_labels;
+                #         if (nparams > numTrainingExamples or (
+                #                 nparams * 4) > psutil.virtual_memory().available * 0.5):
+                #             return covNetDepth, hiddenLayerWidth;
+                return 64, 512;
+            else:
+                solutions = np.roots(np.array([1, image_size * image_size + num_labels + 2,
+                                               num_labels - numTrainingExamples]));
+                hiddenLayerWidth = 1;
+                if np.isreal(solutions[0]) and solutions[0] > 0:
+                    hiddenLayerWidth = np.ceil(solutions[0]);
+                else:
+                    hiddenLayerWidth = np.ceil(solutions[1]);
+
+                hiddenLayerWidth = (int)(hiddenLayerWidth);
+
+                for hlw in range(hiddenLayerWidth, hiddenLayerWidth + 99999):
+                    if  0 == (hlw & (hlw - 1)):
+                        return 0, hlw
+
 
         # Variables.
         # These are the parameters that we are going to be training. The weight
         # matrix will be initialized using random values following a (truncated)
         # normal distribution. The biases get initialized to zero.
         with tf.device("/job:ps/cpu:0"):
-            covNetDepth = 1
-            covNetLayers = 0
-            if useCovNet:
+
+            if not useCovNet:
                 covNetDepth = 1
-                patchSize = 5
+                covNetLayers = 0
+                _, hiddenLayerWidth = computeRequiredMemoryAndNumberofParameters();
+
+            if useCovNet:
+                patchSize = 8
                 covNetLayers = 2
+
+                covNetDepth,hiddenLayerWidth =  computeRequiredMemoryAndNumberofParameters();
 
 
                 weights1CV = tf.Variable(tf.truncated_normal([patchSize, patchSize, numChannels, covNetDepth]))
@@ -343,7 +363,7 @@ def nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_datas
             # We are going to find the minimum of this loss using gradient descent.
             # learning_rate = tf.train.exponential_decay(learning_rate = 0.6, global_step = global_step, decay_steps=maxNumSteps,decay_rate=0.999, staircase=True);
             # optimizer = tf.train.GradientDescentOptimizer(learning_rate).minimize(loss, global_step=global_step);
-            optimizer = tf.train.AdamOptimizer(0.03).minimize(loss);
+            optimizer = tf.train.AdamOptimizer(0.01).minimize(loss);
 
             # Predictions for the training, validation, and test data.
             # These are not part of training, but merely here so that we can report
@@ -353,9 +373,9 @@ def nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_datas
         with tf.device("/job:worker/task:2"):
             with tf.device("/gpu:0"):
                 logitsV  = model(tf_valid_dataset, useDropOut = False, useCovNet = useCovNet);
-                #valid_prediction = tf.nn.softmax(logitsV);
+                tf_ValidPrediction = tf.nn.softmax(logitsV);
                 #used to calculate accuracy in learning
-                test_prediction = tf.nn.softmax(model(tf_test_dataset, useDropOut = False, useCovNet = useCovNet));
+                tf_TestPrediction = tf.nn.softmax(model(tf_test_dataset, useDropOut = False, useCovNet = useCovNet));
 
 
     with tf.Session(graph=graph, target=serverPs1.target, config = tf.ConfigProto(intra_op_parallelism_threads=logicalProcessors*4, inter_op_parallelism_threads=logicalProcessors*4, \
@@ -366,7 +386,8 @@ def nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_datas
 
         tf.global_variables_initializer().run();
 
-        currentIterationErros = np.ndarray(shape=0, dtype=np.float32);
+        lastNerror = -1;
+
         for global_step in range(maxNumSteps):
             # Run the computations. We tell .run() that we want to run the optimizer,
             # and get the loss value and the training predictions returned as numpy
@@ -374,7 +395,7 @@ def nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_datas
 
 
             offset = global_step * batch_size;
-            if( offset >= desiredNumberOfTrainingExamples):
+            if( offset >= numTrainingExamples ):
                 offset = 0;
 
 
@@ -384,25 +405,27 @@ def nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_datas
 
             _, l, predictions = session.run([optimizer, loss, train_prediction], feed_dict=fd);
 
-            crossEntropyError = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=tf_valid_labels, logits=logitsV));
-            ce = crossEntropyError.eval();
-            print("Error found " + str(ce) + " steps " + str(global_step) + " lambda-reg " + str(lambdaV));
+            crossEntropyError = (tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=tf_valid_labels, logits=logitsV))).eval();
 
-            if currentIterationErros.shape[0] > 10:
-                if ce > np.mean(currentIterationErros[-10:]):
+            print("Error found " + str(crossEntropyError) + " steps " + str(global_step) + " globalError " + str(globalError));
+
+
+            if lastNerror < 0:
+                lastNerror = crossEntropyError;
+
+            if global_step % 5 == 0:
+                if lastNerror < crossEntropyError:
                     break;
-
-            currentIterationErros = np.append(currentIterationErros, ce);
-
+                else:
+                    lastNerror = crossEntropyError;
 
             if globalError < 0:
-                globalError = ce;
+                globalError = crossEntropyError;
 
-            if(ce < globalError):
-                print("New minimum global error found " + str(ce) + " steps " + str(global_step) + " lambda-reg " + str(lambdaV));
-                globalError = ce;
-                testPredictions = test_prediction.eval();
-                accRes = accuracy(testPredictions, test_labels);
+            if crossEntropyError < globalError:
+                print("New minimum global error found " + str(crossEntropyError) + " steps " + str(global_step) + " lambda-reg " + str(lambdaV));
+                globalError = crossEntropyError;
+                accRes = accuracy(tf_TestPrediction, test_labels);
                 print('New test accuracy: ' + str(accRes));
 
     return testPredictions, accRes;
