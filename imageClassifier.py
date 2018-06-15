@@ -28,7 +28,13 @@ from six.moves.urllib.request import urlretrieve
 from six.moves import cPickle as pickle
 import  visualisations
 import learningAlgorithms
+
+from sklearn import preprocessing
+
 from visualisations import displayImagesFromTrainFolders, showImagesFromAllPickleFolders, showHistogramsForTrainTest, showImageFromDataSet
+from sklearn.metrics.pairwise import laplacian_kernel
+
+
 
 # Config the matplotlib backend as plotting inline in IPython
 #get_ipython().magic('matplotlib inline')
@@ -132,7 +138,7 @@ def load_letter(folder, min_num_images):
   for image in image_files:
     image_file = os.path.join(folder, image)
     try:
-      image_data = (imageio.imread(image_file).astype(float) - 
+      image_data = (imageio.imread(image_file).astype(float) -
                     pixel_depth / 2) / pixel_depth
       if image_data.shape != (image_size, image_size):
         raise Exception('Unexpected image shape: %s' % str(image_data.shape))
@@ -160,6 +166,7 @@ def maybe_pickle(data_folders, min_num_images_per_class, force=False):
     if os.path.exists(set_filename) and not force:
       # You may override by setting force=True.
       print('%s already present - Skipping pickling.' % set_filename)
+      
     else:
       print('Pickling %s.' % set_filename)
       dataset = load_letter(folder, min_num_images_per_class)
@@ -270,7 +277,6 @@ def createTrainingValidationSets(pickle_files, percentTraining):
     return train_dataset, train_labels, valid_dataset, valid_labels
 
 
-
 def reformatForTensorFlow(dataset, labels, maxNumLabels):
   datasetFormated = learningAlgorithms.flatMatrix(dataset);
   datasetFormated = datasetFormated.astype(np.float32);
@@ -279,7 +285,6 @@ def reformatForTensorFlow(dataset, labels, maxNumLabels):
   for index in range(labels.shape[0]):
       validLabelsMatrix[index] = learningAlgorithms.hotlabel((np.int64)(labels[index]), maxNumLabels);
   return datasetFormated, validLabelsMatrix
-
 
 
 pickle_file = 'notMNIST.pickle'
@@ -307,12 +312,14 @@ else:
     test_folders = maybe_extract(test_filename)
 
     #these are pickle files
+    # shape is m x 28 x 28
     train_datasets = maybe_pickle(train_folders, 45000)
     test_datasets = maybe_pickle(test_folders, 1800)
 
-    #these are nparrays holding the data, non label datasets are 3d arrays.
+    #these are nparrays holding the data, non label datasets are 3d arrays, label data is 1d array
     train_dataset, train_labels, valid_dataset, valid_labels = createTrainingValidationSets(train_datasets, 0.7)
     test_dataset, test_labels, _, _ = createTrainingValidationSets(test_datasets, 1)
+
 
     print('Training:', train_dataset.shape, train_labels.shape)
     print('Validation:', valid_dataset.shape, valid_labels.shape)
@@ -321,15 +328,34 @@ else:
 # visualisations.showImageFromDataSet(train_dataset, train_labels, 3);
 # visualisations.showImageFromDataSet(test_dataset, test_labels, 3);
 
+#returns hot labels for labels, and 3d array into 2d array for non label data.
+# for label data returns a hot label 2d matrix
 numLabels = (np.int64)(max(max(train_labels), max(valid_labels)) + 1);
 train_dataset, train_labels = reformatForTensorFlow(train_dataset, train_labels, numLabels)
 valid_dataset, valid_labels = reformatForTensorFlow(valid_dataset, valid_labels, numLabels)
 test_dataset, test_labels  = reformatForTensorFlow(test_dataset, test_labels, numLabels)
 
+
+# for nc in [8, 16,32,64,128,144,196,256,289, 400, 576, 676, 784]:
+
+
+
 print('Training set', train_dataset.shape, train_labels.shape)
 print('Validation set', valid_dataset.shape, valid_labels.shape)
 print('Test set', test_dataset.shape, test_labels.shape)
 
+# nFeatures = np.shape(train_dataset)[1];
+# permut = np.random.permutation(np.shape(train_dataset)[0])
+# landmarks = train_dataset[permut[:nFeatures], :];
+#
+# train_dataset = laplacian_kernel(train_dataset, landmarks);
+# valid_dataset = laplacian_kernel(valid_dataset, landmarks);
+# test_dataset = laplacian_kernel(valid_dataset, landmarks);
+
+
+
+
+
 # _,_ = learningAlgorithms.logisticRegressionWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_dataset, valid_labels, 5000, 0.1);
-_,_ = learningAlgorithms.nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_dataset, valid_labels, 500, 256,
-                                  useRegularization=False, useDropOut=True, useCovNet=True);
+_,_ = learningAlgorithms.nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_dataset, valid_labels, 512, 64,
+                                  useRegularization=False, useDropOut=True, useCovNet=True, usePCA= True);

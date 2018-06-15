@@ -3,6 +3,9 @@ import tensorflow as tf
 import numpy as np
 import multiprocessing
 import psutil
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import IncrementalPCA, PCA
+
 
 #unused usefull for reference
 def softmax(x):
@@ -171,7 +174,7 @@ def logisticRegressionWithTF(train_dataset, train_labels, test_dataset, test_lab
 #the datasets here are 2d arrays
 #implements two layers deep nn
 
-#data is 2d array
+#data is 2d array or
 def truncate(data, maxSize):
     desiredSize = min(np.shape(data)[0], maxSize);
     if data.ndim > 1:
@@ -179,11 +182,39 @@ def truncate(data, maxSize):
     return  data[:desiredSize];
 
 
+def scaleWithPCA(train_dataset, valid_dataset, test_dataset):
+    # scaler = StandardScaler()
+    for nc in [400]:
+        ipca = PCA(n_components=nc)
+        ipca.fit(train_dataset)
+        rv = sum(ipca.explained_variance_ratio_)
+        print("nc = " + str(nc) + " rv= " + str(rv));
+
+        if rv < 0.97:
+            continue;
+        train_dataset = ipca.transform(train_dataset)
+        # scaler.fit(train_dataset)
+        # train_dataset = scaler.transform(train_dataset)
+
+        # train_dataset = preprocessing.normalize(train_dataset, norm='l2')
+
+        valid_dataset = ipca.transform(valid_dataset)
+        # valid_dataset = preprocessing.normalize(valid_dataset, norm='l2')
+        # scaler.fit(valid_dataset)
+        # valid_dataset = scaler.transform(valid_dataset)
+
+        test_dataset = ipca.transform(test_dataset)
+        # scaler.fit(test_dataset)
+        # test_dataset = scaler.transform(test_dataset)
+        # # test_dataset = preprocessing.normalize(test_dataset, norm='l2')
+
+        break;
+    return train_dataset, valid_dataset, test_dataset
+
 def nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_dataset,
-             valid_labels, desiredNumberOfValidationExamples, batch_size, useRegularization = False, useCovNet = True, useDropOut = True, numChannels = 1):
+             valid_labels, desiredNumberOfValidationExamples, batch_size, useRegularization = False, useCovNet = True, useDropOut = True, usePCA = True, numChannels = 1):
 
     logicalProcessors = multiprocessing.cpu_count();
-    image_size = (int)(np.sqrt(np.shape(train_dataset)[1]));
     numTrainingExamples = np.shape(train_labels)[0];
 
     cluster = tf.train.ClusterSpec({
@@ -209,6 +240,12 @@ def nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_datas
 
     test_dataset = truncate(test_dataset, desiredNumberOfValidationExamples);
     test_labels = truncate(test_labels, desiredNumberOfValidationExamples);
+
+    if usePCA:
+        train_dataset, valid_dataset, test_dataset = scaleWithPCA(train_dataset, valid_dataset, test_dataset)
+
+    image_size = (int)(np.sqrt(np.shape(train_dataset)[1]));
+
 
     num_labels = np.shape(train_labels)[1];
     # With gradient descent training, even this much data is prohibitive.
@@ -236,7 +273,7 @@ def nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_datas
         tf_lambda = tf.constant(lambdaV, dtype=np.float32);
 
         with tf.device("/job:ps/task:0/cpu:0"):
-            maxNumSteps = 200;
+            maxNumSteps = 1000;
             if not useCovNet:
                 tf_train_dataset = tf.placeholder(tf.float32, shape=(batch_size, image_size * image_size));
             else:
@@ -254,8 +291,8 @@ def nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_datas
 
         def computeRequiredMemoryAndNumberofParameters():
             if useCovNet:
-                # for hiddenLayerWidth in [4, 8, 16, 32, 64, 128, 256]:
-                #     for covNetDepth in [2, 4, 8, 16, 32, 64]:
+                # for hiddenLayerWidth in [4, 8, 16, 32, 64, 128, 256, 512]:
+                #     for covNetDepth in [2, 4, 8, 16, 32, 64, 128]:
                 #         nparams = patchSize ** 2 * covNetDepth * (numChannels + covNetDepth) + 2 * covNetDepth
                 #         nparams = nparams + hiddenLayerWidth * (hiddenLayerWidth + num_labels + 2 + image_size * image_size / 8) + num_labels;
                 #         if (nparams > numTrainingExamples or (
@@ -284,16 +321,20 @@ def nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_datas
         # normal distribution. The biases get initialized to zero.
         with tf.device("/job:ps/cpu:0"):
 
+
             if not useCovNet:
                 covNetDepth = 1
                 covNetLayers = 0
                 _, hiddenLayerWidth = computeRequiredMemoryAndNumberofParameters();
 
             if useCovNet:
-                patchSize = 8
+                patchSize = 4
                 covNetLayers = 2
+                #if this is one the dimensionality is not reduced between layers.
+                reduceSizeFactor = 1
 
                 covNetDepth,hiddenLayerWidth =  computeRequiredMemoryAndNumberofParameters();
+
 
 
                 weights1CV = tf.Variable(tf.truncated_normal([patchSize, patchSize, numChannels, covNetDepth]))
@@ -302,7 +343,7 @@ def nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_datas
                 biases2CV = tf.Variable(tf.zeros([covNetDepth]))
 
 
-            weights1 = tf.Variable(tf.truncated_normal([(int)((image_size * image_size * covNetDepth)/(4**covNetLayers)), hiddenLayerWidth]));
+            weights1 = tf.Variable(tf.truncated_normal([(int)((image_size * image_size * covNetDepth)/((reduceSizeFactor**2)**covNetLayers)), hiddenLayerWidth]));
             weights2 = tf.Variable(tf.truncated_normal([hiddenLayerWidth, hiddenLayerWidth]));
             weights3 = tf.Variable(tf.truncated_normal([hiddenLayerWidth, num_labels]));
 
@@ -320,26 +361,27 @@ def nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_datas
 
             reshape = data
             if useCovNet:
-                conv = tf.nn.conv2d(data, weights1CV, [1, 1, 1, 1], padding='SAME')
+                conv = tf.nn.conv2d(data, weights1CV, [1, reduceSizeFactor, reduceSizeFactor, 1], padding='SAME')
                 hidden = tf.nn.leaky_relu(conv + biases1CV)
-                hidden = tf.nn.max_pool(hidden, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
+                # hidden = tf.nn.max_pool(hidden, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
 
-                conv = tf.nn.conv2d(hidden, weights2CV, [1, 1, 1, 1], padding='SAME')
+                conv = tf.nn.conv2d(hidden, weights2CV, [1, reduceSizeFactor, reduceSizeFactor, 1], padding='SAME')
                 hidden = tf.nn.leaky_relu(conv + biases2CV)
-                hidden = tf.nn.max_pool(hidden, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
+                # hidden = tf.nn.max_pool(hidden, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
 
                 shape = hidden.get_shape().as_list()
                 reshape = tf.reshape(hidden, [shape[0], shape[1] * shape[2] * shape[3]])
 
+
             y1 = tf.matmul(reshape, weights1) + biases1
             y1 = tf.nn.leaky_relu(y1);
             if useDropOut:
-                y1 = tf.nn.dropout(y1, 0.8);
+                y1 = tf.nn.dropout(y1, 0.5);
 
             y2 = tf.matmul(y1, weights2) + biases2;
             y2 = tf.nn.leaky_relu(y2);
             if useDropOut:
-                y2 = tf.nn.dropout(y2, 0.8);
+                y2 = tf.nn.dropout(y2, 0.5);
 
             return  tf.matmul(y2, weights3) + biases3;
 
@@ -413,10 +455,10 @@ def nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_datas
             if lastNerror < 0:
                 lastNerror = crossEntropyError;
 
-            if global_step % 5 == 0:
+            if global_step % 10 == 0:
                 if lastNerror < crossEntropyError:
                     break;
-                else:
+            if global_step % 10 == 1:
                     lastNerror = crossEntropyError;
 
             if globalError < 0:
