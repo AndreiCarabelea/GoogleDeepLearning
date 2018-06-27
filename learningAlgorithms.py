@@ -80,7 +80,7 @@ def logisticRegressionWithTF(train_dataset, train_labels, test_dataset, test_lab
     # With gradient descent training, even this much data is prohibitive.
     # Subset the training data for faster turnaround.
 
-    lambdas = [0, 0.01, 0.03, 0.09, 0.3, 0.9, 3, 9]
+    lambdas = [0.0, 0.01, 0.03, 0.09, 0.3, 0.9, 3.0, 9.0]
     globalError = -1;
     # m*n 2d matrix
     testPredictions = np.array([]);
@@ -114,8 +114,12 @@ def logisticRegressionWithTF(train_dataset, train_labels, test_dataset, test_lab
             # it's very common, and it can be optimized). We take the average of this
             # cross-entropy across all training examples: that's our loss.
             logits = tf.matmul(tf_train_dataset, weights) + biases
-            loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=tf_train_labels, logits=logits)) \
-                   + tf.multiply(tf.reduce_sum(tf.square(weights)), tf_lambda);
+            crossEntropy = tf.nn.softmax_cross_entropy_with_logits(labels=tf_train_labels, logits=logits)
+            weightsSum = tf.reduce_sum(tf.square(weights))
+
+            t1 = tf.reduce_mean(crossEntropy)
+            t2 = tf.multiply(weightsSum, tf_lambda)
+            loss = t1 + t2;
 
             # Optimizer.
             # We are going to find the minimum of this loss using gradient descent.
@@ -156,13 +160,13 @@ def logisticRegressionWithTF(train_dataset, train_labels, test_dataset, test_lab
                 if globalError < 0:
                     globalError = ce;
 
-                if(ce < minError ):
+                if(ce <= minError ):
                     print("New minimum error found " + str(ce) + " steps " + str(step) + " lambda-reg " + str(lambdaV));
                     minError = ce;
                 else:
                     break;
 
-                if(ce < globalError):
+                if(ce <= globalError):
                     print("New minimum global error found " + str(ce) + " steps " + str(step) + " lambda-reg " + str(lambdaV));
                     globalError = ce;
                     accRes = accuracy(tf_testPrediction, test_labels);

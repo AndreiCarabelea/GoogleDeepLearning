@@ -281,7 +281,7 @@ def reformatForTensorFlow(dataset, labels, maxNumLabels):
   datasetFormated = learningAlgorithms.flatMatrix(dataset);
   datasetFormated = datasetFormated.astype(np.float32);
   # Map 0 to [1.0, 0.0, 0.0 ...], 1 to [0.0, 1.0, 0.0 ...]
-  validLabelsMatrix = np.ndarray(shape = (labels.shape[0], maxNumLabels), dtype=np.int32);
+  validLabelsMatrix = np.ndarray(shape = (labels.shape[0], maxNumLabels), dtype=np.float32);
   for index in range(labels.shape[0]):
       validLabelsMatrix[index] = learningAlgorithms.hotlabel((np.int64)(labels[index]), maxNumLabels);
   return datasetFormated, validLabelsMatrix
@@ -358,4 +358,4 @@ print('Test set', test_dataset.shape, test_labels.shape)
 
 # _,_ = learningAlgorithms.logisticRegressionWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_dataset, valid_labels, 5000, 0.1);
 _,_ = learningAlgorithms.nnWithTF(train_dataset, train_labels, test_dataset, test_labels, valid_dataset, valid_labels, 512, 64,
-                                  useRegularization=False, useDropOut=True, useCovNet=True, usePCA= True);
+                                   useRegularization=False, useDropOut=True, useCovNet=True, usePCA= False);
